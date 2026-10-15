@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "botgraf"
+version = "0.2.0"
+description = "Читаемые графики для чат-ботов: словарь с данными → PNG или текст"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["matplotlib>=3.7"]  # в 3.6 утечка памяти в constrained layout
+
+[project.optional-dependencies]
+aiogram = ["aiogram>=3"]
+ptb = ["python-telegram-bot>=20"]
+test = ["pytest>=7"]
+
+[project.scripts]
+botgraf = "botgraf.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Предупреждение matplotlib о недостающем глифе означает квадратики на картинке — это ошибка.
+filterwarnings = ["error"]

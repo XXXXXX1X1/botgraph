@@ -1,0 +1,45 @@
+# Демо на сервере: веб-страница за общим Caddy и Telegram-бот.
+#   docker compose -f deploy/docker-compose.yml up -d --build           # веб-демо
+#   docker compose -f deploy/docker-compose.yml --profile bot up -d     # + бот: BOT_TOKEN в deploy/.env
+# Порт наружу не публикуется: снаружи страницу отдаёт Caddy (deploy/Caddyfile.snippet).
+
+x-common: &common
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile
+  image: botgraf:0.2.0
+  restart: unless-stopped
+  read_only: true
+  tmpfs: [/tmp]
+  mem_limit: 300m
+  cpus: 1.0
+  security_opt: ["no-new-privileges:true"]
+
+services:
+  web:
+    <<: *common
+    container_name: botgraf
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8000"
+      BOT_URL: ${BOT_URL:-}
+    networks: [proxy]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  bot:
+    <<: *common
+    container_name: botgraf-bot
+    command: ["python", "examples/bot.py"]
+    env_file:
+      - path: .env
+        required: false
+    profiles: [bot]
+
+networks:
+  proxy:
+    external: true
+    name: cliproxy_default  # сеть, в которой живёт общий Caddy на сервере

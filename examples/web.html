@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>БотГраф — демо</title>
+<style>
+  :root {
+    --bg: #f6f6f3; --surface: #ffffff; --ink: #1b1b1a; --muted: #5f5f5a; --line: #deded8;
+    --accent: #2a78d6; --accent-ink: #ffffff; --bad: #c62f2f; --code: #f0f0eb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141413; --surface: #1e1e1d; --ink: #ececea; --muted: #a3a39e; --line: #34342f;
+      --accent: #3987e5; --accent-ink: #ffffff; --bad: #e66767; --code: #262624;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 32px 0 8px; }
+  .lead { color: var(--muted); margin: 0 0 20px; }
+  .grid { display: grid; gap: 16px; grid-template-columns: 1fr; }
+  @media (min-width: 860px) { .grid { grid-template-columns: 1fr 1fr; } }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .chip { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 999px;
+          padding: 6px 12px; font: inherit; font-size: 14px; cursor: pointer; }
+  .chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  textarea { width: 100%; min-height: 300px; resize: vertical; border: 1px solid var(--line); border-radius: 8px;
+             background: var(--code); color: var(--ink); padding: 10px; font: 13px/1.45 ui-monospace, Menlo, Consolas, monospace; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+  label { font-size: 14px; color: var(--muted); }
+  select { font: inherit; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+  .primary { font: inherit; font-weight: 600; border: 0; border-radius: 8px; padding: 8px 18px;
+             background: var(--accent); color: var(--accent-ink); cursor: pointer; margin-left: auto; }
+  .primary:disabled { opacity: .6; cursor: progress; }
+  #out img { display: block; width: 100%; max-width: 540px; height: auto; border-radius: 8px; border: 1px solid var(--line); }
+  #empty { color: var(--muted); }
+  #error { color: var(--bad); white-space: pre-wrap; margin: 0; }
+  pre { background: var(--code); border-radius: 8px; padding: 10px; overflow-x: auto; margin: 12px 0 0;
+        font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; }
+  code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px; }
+  .muted { color: var(--muted); font-size: 14px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>БотГраф</h1>
+  <p class="lead">Python-библиотека для чат-ботов: словарь с цифрами → картинка, которая читается на телефоне,
+    или текстовая диаграмма. Версия {{version}}.{{bot_link}}</p>
+
+  <div class="grid">
+    <section class="panel" aria-labelledby="in-title">
+      <h2 id="in-title" style="margin-top:0">Данные</h2>
+      <div class="chips" id="examples" role="group" aria-label="Готовые примеры"></div>
+      <textarea id="data" spellcheck="false" aria-label="Данные в формате JSON"></textarea>
+      <div class="row">
+        <label for="kind">Вид</label>
+        <select id="kind">
+          <option value="bar">bar — столбики</option>
+          <option value="line">line — линия</option>
+          <option value="pie">pie — кольцо</option>
+          <option value="calendar">calendar — календарь</option>
+          <option value="card">card — карточка дня</option>
+        </select>
+        <label for="theme">Тема</label>
+        <select id="theme">
+          <option value="light">светлая</option>
+          <option value="dark">тёмная</option>
+        </select>
+        <button class="primary" id="draw" type="button">Нарисовать</button>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="out-title" aria-live="polite">
+      <h2 id="out-title" style="margin-top:0">Что получит пользователь бота</h2>
+      <div id="out">
+        <p id="empty">Выберите пример или вставьте свои данные и нажмите «Нарисовать».</p>
+        <p id="error" hidden></p>
+        <img id="png" alt="" hidden>
+        <pre id="text" hidden></pre>
+      </div>
+    </section>
+  </div>
+
+  <h2>То же из кода бота</h2>
+  <pre>from botgraf import render_png, render_text
+png = render_png(data, kind="bar", theme="dark")   # io.BytesIO → send_photo
+txt = render_text(data, kind="bar")                # если фото отправить нельзя</pre>
+
+  <h2>HTTP API этого демо</h2>
+  <pre>curl -X POST --data-binary @data.json "https://<span id="host"></span>/api/png?kind=bar&amp;theme=light" -o chart.png
+curl -X POST --data-binary @data.json "https://<span id="host2"></span>/api/text?kind=bar"</pre>
+  <p class="muted">Ошибка в данных — ответ 400 с объяснением, что исправить. Данные не сохраняются.</p>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const NAMES = {
+  "bar": "Столбики", "bar-compare": "Сравнение", "line": "Линия", "line-compare": "Две линии",
+  "pie": "Кольцо", "calendar": "Календарь", "card": "Карточка дня",
+};
+$("host").textContent = $("host2").textContent = location.host;
+let examples = {};
+
+function pick(name) {
+  const ex = examples[name];
+  $("data").value = JSON.stringify(ex.data, null, 2);
+  $("kind").value = ex.kind;
+  for (const b of $("examples").children) b.setAttribute("aria-pressed", String(b.dataset.name === name));
+  draw();
+}
+
+function show(state) {
+  $("empty").hidden = state !== "empty";
+  $("error").hidden = state !== "error";
+  $("png").hidden = $("text").hidden = state !== "ok";
+}
+
+async function draw() {
+  const body = $("data").value;
+  const kind = $("kind").value, theme = $("theme").value;
+  $("draw").disabled = true;
+  $("draw").textContent = "Рисую…";
+  try {
+    const [png, text] = await Promise.all([
+      fetch(`/api/png?kind=${kind}&theme=${theme}`, { method: "POST", body }),
+      fetch(`/api/text?kind=${kind}`, { method: "POST", body }),
+    ]);
+    if (!png.ok) {
+      $("error").textContent = "Ошибка: " + await png.text();
+      return show("error");
+    }
+    const old = $("png").src;
+    $("png").src = URL.createObjectURL(await png.blob());
+    if (old.startsWith("blob:")) URL.revokeObjectURL(old);
+    $("png").alt = "График: " + kind;
+    $("text").textContent = await text.text();
+    show("ok");
+  } catch (e) {
+    $("error").textContent = "Сервер недоступен, попробуйте ещё раз.";
+    show("error");
+  } finally {
+    $("draw").disabled = false;
+    $("draw").textContent = "Нарисовать";
+  }
+}
+
+$("draw").addEventListener("click", draw);
+$("theme").addEventListener("change", () => { if (!$("png").hidden) draw(); });
+fetch("/api/examples").then((r) => r.json()).then((data) => {
+  examples = data;
+  for (const name of Object.keys(data)) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "chip"; b.dataset.name = name;
+    b.textContent = NAMES[name] || name;
+    b.addEventListener("click", () => pick(name));
+    $("examples").append(b);
+  }
+  pick("bar-compare");
+});
+</script>
+</body>
+</html>
