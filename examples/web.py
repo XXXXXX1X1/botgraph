@@ -7,7 +7,7 @@ API:
     POST /api/png?kind=bar&theme=light   тело — JSON с данными → image/png
     POST /api/text?kind=bar              тело — JSON с данными → text/plain
     GET  /api/examples                   готовые примеры {имя: {kind, data}}
-Ошибка в данных — 400 и текст ChartError.
+Ошибка в данных — 400 и текст BotGraphValidationError: [КОД] Поле '…': что исправить.
 """
 
 import html
@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from demo import EXAMPLES
 
-from botgraf import ChartError, __version__, render_png, render_text
+from botgraph import BotGraphValidationError, __version__, render_png, render_text
 
 MAX_BODY = 64 * 1024  # самый большой допустимый набор (календарь на 182 дня) занимает ~6 КБ
 # Рисунок — 20–70 мс CPU; больше двух одновременно на маленьком сервере только удлиняют очередь.
@@ -47,11 +47,11 @@ _HEADERS = {
                                "script-src 'unsafe-inline'; frame-ancestors 'none'",
 }
 
-log = logging.getLogger("botgraf.web")
+log = logging.getLogger("botgraph.web")
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = f"botgraf/{__version__}"
+    server_version = f"botgraph/{__version__}"
     sys_version = ""
     timeout = 15  # медленный клиент не держит поток вечно
 
@@ -86,7 +86,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(HTTPStatus.OK, "image/png", png)
             else:
                 self._send(HTTPStatus.OK, "text/plain; charset=utf-8", render_text(body, kind=kind).encode())
-        except ChartError as e:
+        except BotGraphValidationError as e:
             self._error(HTTPStatus.BAD_REQUEST, str(e))
         finally:
             _DRAWING.release()
@@ -113,7 +113,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     host, port = os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("PORT", "8000"))
     server = ThreadingHTTPServer((host, port), Handler)
-    log.info("botgraf %s: http://%s:%d", __version__, host, port)
+    log.info("botgraph %s: http://%s:%d", __version__, host, port)
     server.serve_forever()
 
 

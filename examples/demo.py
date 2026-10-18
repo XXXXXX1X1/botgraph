@@ -7,7 +7,7 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-from botgraf import render_png, render_text
+from botgraph import render_png, render_text
 
 _DAYS = [f"{d:02d}.10" for d in range(1, 15)]
 _HABIT_START = date(2026, 5, 18)

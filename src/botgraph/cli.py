@@ -1,4 +1,4 @@
-"""Утилита командной строки: botgraf data.json -o chart.png
+"""Утилита командной строки: botgraph data.json -o chart.png
 
 Коды выхода: 0 — готово, 1 — не прочитать или не записать файл, 2 — ошибка в данных или аргументах.
 """
@@ -8,13 +8,13 @@ import sys
 from pathlib import Path
 
 from .png import render_png
-from .schema import KINDS, ChartError
+from .schema import KINDS, BotGraphValidationError
 from .text import render_text
 from .themes import THEMES
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="botgraf", description="График для чат-бота из JSON: PNG-картинка или текст.")
+    parser = argparse.ArgumentParser(prog="botgraph", description="График для чат-бота из JSON: PNG-картинка или текст.")
     parser.add_argument("file", help="JSON-файл с данными; - — читать из stdin")
     parser.add_argument("-k", "--kind", default="bar", choices=KINDS, help="вид графика (по умолчанию bar)")
     parser.add_argument("-t", "--theme", default="light", choices=tuple(THEMES), help="тема (по умолчанию light)")
@@ -33,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
             sys.stdout.buffer.write(png)
         else:
             Path(args.output).write_bytes(png)
-    except ChartError as e:
+    except BotGraphValidationError as e:
         print(f"ошибка: {e}", file=sys.stderr)
         return 2
     except OSError as e:

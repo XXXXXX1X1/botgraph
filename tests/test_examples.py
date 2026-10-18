@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from botgraf import ChartError, render_text
+from botgraph import BotGraphValidationError, render_text
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "examples"))
 import web  # noqa: E402 — examples/ не пакет
@@ -56,9 +56,9 @@ def test_png_and_text(base_url):
 @pytest.mark.parametrize(
     ("path", "body", "status", "message"),
     [
-        ("/api/png", b'{"labels": ["a"], "values": ["x"]}', 400, "values[0] должно быть числом"),
-        ("/api/png?theme=blue", DATA, 400, "theme должен быть"),
-        ("/api/text?kind=radar", DATA, 400, "kind"),
+        ("/api/png", b'{"labels": ["a"], "values": ["x"]}', 400, "[INVALID_VALUE_TYPE] Поле 'values[0]'"),
+        ("/api/png?theme=blue", DATA, 400, "[UNSUPPORTED_THEME]"),
+        ("/api/text?kind=radar", DATA, 400, "[UNSUPPORTED_KIND]"),
         ("/api/nope", DATA, 404, "нет такой страницы"),
     ],
 )
@@ -78,7 +78,7 @@ def test_too_large_body_rejected_before_reading(base_url):
     conn.close()
 
 
-bot = pytest.importorskip("bot")  # нужен aiogram
+bot = pytest.importorskip("telegram_bot_demo")  # нужен aiogram
 
 
 @pytest.mark.parametrize(
@@ -93,10 +93,11 @@ def test_bot_parses_kind_and_theme(text, expected):
     assert bot.parse_request(text) == expected
 
 
-@pytest.mark.parametrize(("text", "message"), [("привет", "не вижу JSON"), ('radar {"a": 1}', "не понимаю «radar»")])
-def test_bot_rejects_unclear_request(text, message):
-    with pytest.raises(ChartError, match=message):
+@pytest.mark.parametrize(("text", "code"), [("привет", "INVALID_JSON"), ('radar {"a": 1}', "UNSUPPORTED_KIND")])
+def test_bot_rejects_unclear_request(text, code):
+    with pytest.raises(BotGraphValidationError) as e:
         bot.parse_request(text)
+    assert e.value.code == code
 
 
 @pytest.mark.parametrize("name", EXAMPLES)

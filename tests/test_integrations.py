@@ -5,10 +5,10 @@ import io
 
 import pytest
 
-from botgraf import ChartError
+from botgraph import BotGraphValidationError
 
-aiogram_adapter = pytest.importorskip("botgraf.integrations.aiogram")
-ptb_adapter = pytest.importorskip("botgraf.integrations.ptb")
+aiogram_adapter = pytest.importorskip("botgraph.integrations.aiogram")
+ptb_adapter = pytest.importorskip("botgraph.integrations.ptb")
 from aiogram.types import BufferedInputFile  # noqa: E402 — только после importorskip
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
@@ -61,6 +61,6 @@ def test_as_text_sends_escaped_pre(adapter):
 @pytest.mark.parametrize("as_text", [False, True])
 def test_bad_data_raises_and_sends_nothing(adapter, as_text):
     bot = FakeBot()
-    with pytest.raises(ChartError):
+    with pytest.raises(BotGraphValidationError):
         asyncio.run(adapter.send_chart(bot, 42, {"labels": ["a"], "values": ["x"]}, as_text=as_text))
     assert bot.calls == []

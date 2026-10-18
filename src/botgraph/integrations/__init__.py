@@ -1,7 +1,7 @@
 """Готовая отправка в Telegram: await send_chart(bot, chat_id, data).
 
-    from botgraf.integrations.aiogram import send_chart   # pip install 'botgraf[aiogram]'
-    from botgraf.integrations.ptb import send_chart       # pip install 'botgraf[ptb]'
+    from botgraph.integrations.aiogram import send_chart   # pip install 'botgraph[aiogram]'
+    from botgraph.integrations.ptb import send_chart       # pip install 'botgraph[ptb]'
 """
 
 import asyncio

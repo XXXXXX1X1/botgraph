@@ -7,7 +7,7 @@ from datetime import date, timedelta
 from matplotlib.figure import Figure
 from matplotlib.patches import FancyBboxPatch
 
-from .schema import ChartData
+from .schema import ChartPayload
 from .themes import DPI, EDGE_PAD_PX, LABEL_SIZE, TICK_SIZE, WIDTH_PX, Theme, base_axes, font, text_width_px
 
 MONTHS = ("янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек")
@@ -39,7 +39,7 @@ class Grid:
         return (d - self.start).days // 7, d.weekday()
 
 
-def grid(chart: ChartData) -> Grid:
+def grid(chart: ChartPayload) -> Grid:
     first, last = min(chart.dates), max(chart.dates)
     start = first - timedelta(days=first.weekday())
     return Grid(first, last, start, (last - start).days // 7 + 1, dict(zip(chart.dates, chart.values)))
@@ -66,11 +66,11 @@ def _cell_px(weeks: int) -> float:
     return (WIDTH_PX - 2 * EDGE_PAD_PX - _DAY_LABEL_PX) / max(weeks, _MIN_COLUMNS)
 
 
-def height(chart: ChartData) -> int:
+def height(chart: ChartPayload) -> int:
     return round((130 if chart.title else 30) + 70 + 7 * _cell_px(grid(chart).weeks) + _FOOTER_PX)
 
 
-def draw(fig: Figure, chart: ChartData, t: Theme) -> None:
+def draw(fig: Figure, chart: ChartPayload, t: Theme) -> None:
     g = grid(chart)
     cell_px = _cell_px(g.weeks)
     ax, foot = fig.subplots(2, 1, height_ratios=[7 * cell_px, _FOOTER_PX])

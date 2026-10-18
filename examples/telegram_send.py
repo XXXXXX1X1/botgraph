@@ -10,7 +10,7 @@ import os
 import urllib.request
 import uuid
 
-from botgraf import ChartError, render_png, render_text
+from botgraph import BotGraphValidationError, render_png, render_text
 
 API = os.environ.get("TELEGRAM_API", "https://api.telegram.org")
 
@@ -21,7 +21,7 @@ def send_photo(token: str, chat_id: str, png: bytes, caption: str) -> dict:
         _field(boundary, "chat_id", chat_id),
         _field(boundary, "caption", caption),
         (
-            f'--{boundary}\r\nContent-Disposition: form-data; name="photo"; filename="botgraf.png"\r\n'
+            f'--{boundary}\r\nContent-Disposition: form-data; name="photo"; filename="botgraph.png"\r\n'
             "Content-Type: image/png\r\n\r\n"
         ).encode() + png + b"\r\n",
         f"--{boundary}--\r\n".encode(),
@@ -43,7 +43,7 @@ def main() -> None:
     stats = {"title": "Найдено на фото за день", "labels": ["Кошки", "Собаки"], "values": [12, 8]}
     try:
         png = render_png(stats, kind="bar", theme="light")
-    except ChartError as e:
+    except BotGraphValidationError as e:
         print(f"Отчёт не построен: {e}")
         return
     result = send_photo(os.environ["BOT_TOKEN"], os.environ["CHAT_ID"], png.getvalue(), caption=stats["title"])

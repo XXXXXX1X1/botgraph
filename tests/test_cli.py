@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from botgraf.cli import main
+from botgraph.cli import main
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 DATA = {"labels": ["Кошки", "Собаки"], "values": [12, 8]}
@@ -34,7 +34,8 @@ def test_bad_data_exit_2(tmp_path, capsys):
     path = tmp_path / "bad.json"
     path.write_text('{"labels": ["a"], "values": ["x"]}')
     assert main([str(path), "--text"]) == 2
-    assert capsys.readouterr().err == "ошибка: values[0] должно быть числом, получено 'x'\n"
+    assert capsys.readouterr().err == (
+        "ошибка: [INVALID_VALUE_TYPE] Поле 'values[0]': Ожидается конечное число, получено 'x'\n")
 
 
 def test_missing_file_exit_1(tmp_path, capsys):
@@ -49,9 +50,9 @@ def test_output_required(data_file, capsys):
 
 
 def test_module_run_from_stdin_to_stdout():
-    # python -m botgraf - -o - : данные из stdin, PNG в stdout — для конвейеров.
+    # python -m botgraph - -o - : данные из stdin, PNG в stdout — для конвейеров.
     result = subprocess.run(
-        [sys.executable, "-m", "botgraf", "-", "-k", "line", "-o", "-"],
+        [sys.executable, "-m", "botgraph", "-", "-k", "line", "-o", "-"],
         input=json.dumps(DATA).encode(), capture_output=True, check=True,
     )
     assert result.stdout.startswith(PNG_SIGNATURE)

@@ -1,7 +1,7 @@
 import pytest
 
-from botgraf import ChartError, render_text
-from botgraf.fmt import format_percent, format_value
+from botgraph import BotGraphValidationError, render_text
+from botgraph.fmt import format_percent, format_value
 
 
 def test_bar_text():
@@ -33,7 +33,7 @@ def test_pie_text_with_percent_and_total():
 
 
 def test_text_uses_same_validation():
-    with pytest.raises(ChartError):
+    with pytest.raises(BotGraphValidationError):
         render_text({"labels": ["a", "b"], "values": [1]})
 
 

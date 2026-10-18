@@ -1,6 +1,9 @@
 import gc
 import re
+import subprocess
+import sys
 import threading
+import time
 import tracemalloc
 
 import matplotlib.pyplot as plt
@@ -8,10 +11,10 @@ import pytest
 from matplotlib.figure import Figure
 from matplotlib.image import imread
 
-from botgraf import ChartError, render_png
-from botgraf.png import _bar, _bar_xlim
-from botgraf.schema import MAX_POINTS, validate
-from botgraf.themes import DPI, THEMES, WIDTH_PX, fit_width, text_width_px
+from botgraph import BotGraphValidationError, render_png, render_text, validate_payload
+from botgraph.png import _bar, _bar_xlim
+from botgraph.schema import MAX_POINTS, MAX_TITLE_LEN
+from botgraph.themes import DPI, THEMES, WIDTH_PX, fit_width, text_width_px
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 SAMPLES = {
@@ -49,22 +52,25 @@ def test_themes_differ():
 @pytest.mark.parametrize(
     ("kind", "data"),
     [
-        ("bar", {"title": "Т" * 40, "labels": ["Д" * 20] * MAX_POINTS["bar"], "values": [1.1e12] * 12}),
+        ("bar", {"title": "Т" * MAX_TITLE_LEN, "labels": ["Д" * 20] * MAX_POINTS["bar"], "values": [1.1e12] * 12}),
         ("bar", {"labels": ["Доход", "Расход"], "values": [52000, -61000]}),
         ("bar", {"labels": ["ноль"], "values": [0]}),
         ("line", {"labels": [f"{d} октября 2026" for d in range(1, 32)], "values": [d % 7 - 3 for d in range(31)]}),
         ("line", {"labels": ["пн", "вт"], "values": [5, 5]}),
-        ("pie", {"labels": ["П" * 20] * MAX_POINTS["pie"], "values": [1e9, 1, 0, 0, 0, 3]}),
+        ("pie", {"labels": ["П" * 20] * MAX_POINTS["pie"], "values": [1e9, 1, 0, 0, 0, 3, 7, 1e9]}),
+        ("pie", {"labels": ["a", "b"], "values": [1, 0]}),
         ("bar", {"labels": ["Ш" * 20, "Ж" * 20], "values": [-999.9e9, 888.8e9]}),
         ("line", {"labels": ["Ш" * 20, "Ж" * 20], "values": [1, 2]}),
         ("bar", {"labels": ["Ш" * 20, "б"], "values": [1e9, -2], "previous": [-2e9, 0],
                  "previous_label": "Ш" * 20, "current_label": "Щ" * 20}),
         ("line", {"labels": ["пн", "вт"], "values": [5, 5], "previous": [5, 5]}),
         ("line", {"labels": [str(d) for d in range(31)], "values": [0] * 31, "previous": [-1e12] * 31}),
+        ("line", {"labels": ["пн"], "values": [5]}),
+        ("line", {"labels": ["пн"], "values": [5], "previous": [3]}),
         ("calendar", {"labels": ["2026-10-14"], "values": [0]}),
         ("calendar", {"labels": [f"2026-{m:02d}-01" for m in (1, 6)], "values": [5, 1e9]}),
         ("card", {"metrics": [{"label": "Ш" * 20, "value": -1.1e12, "previous": 0, "unit": "Ш" * 6}] * 4,
-                  "trend": {"label": "Ш" * 40, "labels": ["Ш" * 20] * 31, "values": [1] * 31}}),
+                  "trend": {"label": "Ш" * MAX_TITLE_LEN, "labels": ["Ш" * 20] * 31, "values": [1] * 31}}),
         ("card", {"metrics": [{"label": "один", "value": 0}]}),
     ],
 )
@@ -84,8 +90,8 @@ def test_bar_axis_never_inverts_on_wide_labels_and_values():
 
 def test_bar_mixed_signs_keeps_category_names():
     # Подписи по обе стороны нуля раньше съедали ширину — названия сжимались до «М…».
-    chart = validate({"labels": ["Москва", "Казань", "Сочи"], "values": [-12000, 45000, 8000],
-                      "previous": [-5000, 30000, 9000]}, "bar")
+    chart = validate_payload({"labels": ["Москва", "Казань", "Сочи"], "values": [-12000, 45000, 8000],
+                              "previous": [-5000, 30000, 9000]}, "bar")
     fig = Figure(figsize=(WIDTH_PX / DPI, 6), dpi=DPI, layout="constrained")
     _bar(fig, chart, THEMES["light"])
     ax = fig.axes[0]
@@ -102,27 +108,31 @@ def test_fit_width_shortens_by_pixels_not_chars():
 
 def test_unsupported_glyph_is_clear_error():
     # Иероглифа нет в DejaVu Sans: вместо квадратика на картинке — понятная ошибка.
-    with pytest.raises(ChartError, match="символ '猫' не поддерживается шрифтом"):
-        render_png({"labels": ["Кошки 猫"], "values": [1]})
-    with pytest.raises(ChartError, match="title"):
-        render_png({"title": "猫", "labels": ["a"], "values": [1]})
-    with pytest.raises(ChartError, match="previous_label"):
-        render_png({"labels": ["a"], "values": [1], "previous": [1], "previous_label": "猫"})
-    with pytest.raises(ChartError, match=re.escape("metrics[0].label")):
-        render_png({"metrics": [{"label": "猫", "value": 1}]}, kind="card")
-    with pytest.raises(ChartError, match=re.escape("trend.labels")):
-        render_png({"metrics": [{"label": "a", "value": 1}], "trend": {"labels": ["猫", "b"], "values": [1, 2]}}, kind="card")
-    with pytest.raises(ChartError, match=re.escape("trend.label")):
-        render_png({"metrics": [{"label": "a", "value": 1}], "trend": {"label": "猫", "labels": ["a", "b"], "values": [1, 2]}}, kind="card")
+    with pytest.raises(BotGraphValidationError, match=re.escape("[UNSUPPORTED_GLYPH] Поле 'labels[1]': Символ '猫'")):
+        render_png({"labels": ["a", "Кошки 猫"], "values": [1, 2]})
+    for kind, data, field in [
+        ("bar", {"title": "猫", "labels": ["a"], "values": [1]}, "title"),
+        ("bar", {"labels": ["a"], "values": [1], "previous": [1], "previous_label": "猫"}, "previous_label"),
+        ("card", {"metrics": [{"label": "猫", "value": 1}]}, "metrics[0].label"),
+        ("card", {"metrics": [{"label": "a", "value": 1}], "trend": {"labels": ["猫", "b"], "values": [1, 2]}}, "trend.labels[0]"),
+        ("card", {"metrics": [{"label": "a", "value": 1}], "trend": {"label": "猫", "labels": ["a", "b"], "values": [1, 2]}}, "trend.label"),
+    ]:
+        with pytest.raises(BotGraphValidationError) as e:
+            render_png(data, kind=kind)
+        assert (e.value.code, e.value.field) == ("UNSUPPORTED_GLYPH", field)
+
+
+def test_emoji_from_font_are_drawn():
+    assert _size(render_png({"labels": ["Кошки 🐱"], "values": [1]}))[0] == 1080
 
 
 def test_bad_theme():
-    with pytest.raises(ChartError, match="theme должен быть"):
+    with pytest.raises(BotGraphValidationError, match=re.escape("[UNSUPPORTED_THEME] Поле 'theme'")):
         render_png(SAMPLES["bar"], theme="blue")
 
 
 def test_invalid_data_raises_before_drawing():
-    with pytest.raises(ChartError):
+    with pytest.raises(BotGraphValidationError):
         render_png({"labels": ["a"], "values": ["x"]})
 
 
@@ -148,6 +158,39 @@ def test_no_memory_growth_on_many_renders():
     end, _ = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     assert end - start < 2 * 1024 * 1024
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="распределитель памяти macOS держит освобождённое, пик скачет без утечки")
+def test_process_memory_stable_over_500_renders():
+    # tracemalloc видит только объекты Python, а буферы Agg и шрифтов живут в C — их рост виден по памяти процесса.
+    # Отдельный процесс: пик памяти этого уже поднят другими тестами и рост бы не показал.
+    script = """
+import resource
+from botgraph import render_png
+data = {"title": "Пользователи", "labels": ["пн", "вт", "ср"], "values": [3, 5, 4]}
+peak = lambda: resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024  # Linux считает в КБ
+for _ in range(20):
+    render_png(data, kind="line")
+before = peak()
+for _ in range(500):
+    render_png(data, kind="line")
+print(peak() - before)
+"""
+    growth = int(subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True).stdout)
+    assert growth <= 15 * 1024 * 1024
+
+
+@pytest.mark.parametrize("kind", SAMPLES)
+def test_fast_enough_for_a_bot(kind):
+    render_png(SAMPLES[kind], kind=kind)  # прогрев шрифтов
+    start = time.perf_counter()
+    render_png(SAMPLES[kind], kind=kind)
+    png_s = time.perf_counter() - start
+    start = time.perf_counter()
+    for _ in range(100):
+        render_text(SAMPLES[kind], kind=kind)
+    text_s = (time.perf_counter() - start) / 100
+    assert png_s <= 0.5 and text_s <= 0.01
 
 
 def test_parallel_threads_give_same_picture():

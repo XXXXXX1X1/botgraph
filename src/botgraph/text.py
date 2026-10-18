@@ -6,21 +6,21 @@
 
 from . import card, heatmap
 from .fmt import columns, delta_note, format_delta, format_percent, format_value
-from .schema import ChartData, check_kind, validate
+from .schema import ChartPayload
+from .validator import validate_payload
 
 BAR_CELLS = 10
 _EIGHTHS = " ▏▎▍▌▋▊▉"
 
 
 def render_text(data, kind: str = "bar") -> str:
-    check_kind(kind)
-    chart = card.validate_card(data) if kind == "card" else validate(data, kind)
+    chart = validate_payload(data, kind)
     lines = [chart.title] if chart.title else []
     lines += _RENDER[kind](chart)
     return "\n".join(lines)
 
 
-def _bar(chart: ChartData) -> list[str]:
+def _bar(chart: ChartPayload) -> list[str]:
     scale = max(abs(v) for v in chart.values) or 1.0
     bars = [_bar_cells(abs(v) / scale * BAR_CELLS).ljust(BAR_CELLS) for v in chart.values]
     values = [format_value(v) for v in chart.values]
@@ -35,7 +35,7 @@ def _bar_cells(cells: float) -> str:
     return "█" * full + (_EIGHTHS[rest] if rest else "")
 
 
-def _line(chart: ChartData) -> list[str]:
+def _line(chart: ChartPayload) -> list[str]:
     values = [format_value(v) for v in chart.values]
     if not chart.previous:
         return columns(chart.labels, values)
@@ -47,7 +47,7 @@ def _line(chart: ChartData) -> list[str]:
     )
 
 
-def _pie(chart: ChartData) -> list[str]:
+def _pie(chart: ChartPayload) -> list[str]:
     total = sum(chart.values)
     rows = columns(
         chart.labels, [format_value(v) for v in chart.values], [format_percent(v, total) for v in chart.values],
@@ -55,7 +55,7 @@ def _pie(chart: ChartData) -> list[str]:
     return rows + [f"Всего: {format_value(total)}"]
 
 
-def _calendar(chart: ChartData) -> list[str]:
+def _calendar(chart: ChartPayload) -> list[str]:
     g = heatmap.grid(chart)
     top = max(chart.values)
     rows = [[" "] * g.weeks for _ in range(7)]

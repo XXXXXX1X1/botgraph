@@ -13,8 +13,8 @@ from matplotlib.figure import Figure
 
 from .fmt import columns, delta_note, format_delta, format_value, sparkline
 from .schema import (
-    MAX_TITLE_LEN, ChartData, ChartError, as_dict, flag, number, optional_text, reject_unknown, required_list, text,
-    validate,
+    MAX_TITLE_LEN, BotGraphValidationError, ChartPayload, as_dict, flag, number, optional_text, reject_unknown,
+    required_list, text, validate_chart,
 )
 from .themes import (
     DPI, EDGE_PAD_PX, LABEL_SIZE, TICK_SIZE, WIDTH_PX, Theme, base_axes, delta_color, fit_width, font, text_width_px,
@@ -47,11 +47,13 @@ class Metric:
 
 
 @dataclass(frozen=True)
-class CardData:
+class CardPayload:
     title: str | None
     previous_label: str
     metrics: tuple[Metric, ...]
-    trend: ChartData | None  # мини-график — та же линия, её title — подпись над ним
+    trend: ChartPayload | None  # мини-график — та же линия, её title — подпись над ним
+    theme: str
+    kind: str = "card"
 
     def texts(self) -> list[tuple[str, str, bool]]:
         texts = [("previous_label", self.previous_label, False)]
@@ -60,63 +62,70 @@ class CardData:
         for i, m in enumerate(self.metrics):
             texts += [(f"metrics[{i}].label", m.label, False), (f"metrics[{i}]", m.formatted(), True)]
         if self.trend:
-            # В данных подпись мини-графика называется label, внутри ChartData — title.
+            # В данных подпись мини-графика называется label, внутри ChartPayload — title.
             texts += [(f"trend.{'label' if field == 'title' else field}", s, False) for field, s, _ in self.trend.texts()]
         return texts
 
 
-def validate_card(data) -> CardData:
+def validate_card(data, theme: str) -> CardPayload:
     data = as_dict(data)
     reject_unknown(data, _FIELDS)
     raw = required_list(data, "metrics")
-    if not 1 <= len(raw) <= MAX_METRICS:
-        raise ChartError(f"для card нужно от 1 до {MAX_METRICS} метрик в metrics, получено {len(raw)}")
-    return CardData(
+    if not raw:
+        raise BotGraphValidationError("EMPTY_DATA", "Нужна хотя бы одна метрика", "metrics")
+    if len(raw) > MAX_METRICS:
+        raise BotGraphValidationError("TOO_MANY_ITEMS", f"Максимум {MAX_METRICS} метрики, получено {len(raw)}", "metrics")
+    return CardPayload(
         title=optional_text("title", data.get("title"), MAX_TITLE_LEN),
-        previous_label=text("previous_label", data["previous_label"]) if "previous_label" in data else "вчера",
-        metrics=tuple(_metric(f"metrics[{i}]", m) for i, m in enumerate(raw)),
-        trend=_trend(data["trend"]) if data.get("trend") is not None else None,
+        previous_label=text("previous_label", data["previous_label"], "вчера") if "previous_label" in data else "вчера",
+        metrics=tuple(_metric(i, m) for i, m in enumerate(raw)),
+        trend=_trend(data["trend"], theme) if data.get("trend") is not None else None,
+        theme=theme,
     )
 
 
-def _metric(path: str, m) -> Metric:
+def _metric(i: int, m) -> Metric:
+    path = f"metrics[{i}]"
     if not isinstance(m, dict):
-        raise ChartError(f"{path} должен быть словарём, получено {m!r}")
+        raise BotGraphValidationError("INVALID_TYPE", f"Ожидается словарь, получено {type(m).__name__}", path)
     reject_unknown(m, _METRIC_FIELDS, path)
     for key in ("label", "value"):
         if key not in m:
-            raise ChartError(f"нет обязательного поля {path}.{key}")
+            raise BotGraphValidationError("MISSING_KEY", "Отсутствует обязательное поле", f"{path}.{key}")
     return Metric(
-        label=text(f"{path}.label", m["label"]),
+        label=text(f"{path}.label", m["label"], f"#{i + 1}"),
         value=number(f"{path}.value", m["value"]),
         previous=number(f"{path}.previous", m["previous"]) if m.get("previous") is not None else None,
-        unit=text(f"{path}.unit", m["unit"], MAX_UNIT_LEN) if "unit" in m else None,
+        unit=text(f"{path}.unit", m["unit"], None, MAX_UNIT_LEN) if "unit" in m else None,
         lower_is_better=flag(f"{path}.lower_is_better", m["lower_is_better"]) if "lower_is_better" in m else False,
     )
 
 
-def _trend(trend) -> ChartData:
+def _trend(trend, theme: str) -> ChartPayload:
     if not isinstance(trend, dict):
-        raise ChartError(f"trend должен быть словарём, получено {trend!r}")
+        raise BotGraphValidationError("INVALID_TYPE", f"Ожидается словарь, получено {type(trend).__name__}", "trend")
     reject_unknown(trend, _TREND_FIELDS, "trend")
     label = optional_text("trend.label", trend.get("label"), MAX_TITLE_LEN)
     try:
-        line = validate({k: v for k, v in trend.items() if k != "label"}, "line")
-    except ChartError as e:
-        raise ChartError(f"trend: {e}") from None
+        line = validate_chart({k: v for k, v in trend.items() if k != "label"}, "line", theme)
+    except BotGraphValidationError as e:
+        raise BotGraphValidationError(e.code, e.message, f"trend.{e.field}") from None
+    # Мини-график подписан по краям периода — из одной точки периода нет.
+    if len(line.values) < 2:
+        raise BotGraphValidationError("TOO_FEW_ITEMS", "Для мини-графика нужно минимум 2 значения", "trend.values")
     return replace(line, title=label)
 
 
-def height(card: CardData) -> int:
+def height(card: CardPayload) -> int:
     rows = math.ceil(len(card.metrics) / _columns(card))
     return (130 if card.title else 30) + rows * _TILE_PX + (_TREND_PX + _TREND_DECOR_PX if card.trend else 0)
 
 
-def _columns(card: CardData) -> int:
+def _columns(card: CardPayload) -> int:
     return 1 if len(card.metrics) == 1 else 2
 
 
-def draw(fig: Figure, card: CardData, t: Theme) -> None:
+def draw(fig: Figure, card: CardPayload, t: Theme) -> None:
     cols = _columns(card)
     rows = math.ceil(len(card.metrics) / cols)
     if card.trend:
@@ -150,7 +159,7 @@ def _tile(ax, anchor: tuple[int, int], m: Metric, previous_label: str, col_px: f
         line(212, fit_width(f"{previous_label}: {m.formatted(m.previous)}", TICK_SIZE, col_px), t.ink_secondary, TICK_SIZE)
 
 
-def _trend_chart(ax, trend: ChartData, t: Theme) -> None:
+def _trend_chart(ax, trend: ChartPayload, t: Theme) -> None:
     """Мини-график без осей: форма ряда, последнее значение и края периода."""
     base_axes(ax, t)
     n = len(trend.values)
@@ -176,7 +185,7 @@ def _trend_chart(ax, trend: ChartData, t: Theme) -> None:
         ax.set_title(trend.title, loc="left", color=t.ink_secondary, fontproperties=font(LABEL_SIZE), pad=14)
 
 
-def card_text(card: CardData) -> list[str]:
+def card_text(card: CardPayload) -> list[str]:
     deltas = [format_delta(m.value, m.previous)[0] if m.previous is not None else "" for m in card.metrics]
     lines = columns([m.label for m in card.metrics], [m.formatted() for m in card.metrics], deltas)
     if any(deltas):

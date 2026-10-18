@@ -14,11 +14,12 @@ from matplotlib.transforms import blended_transform_factory
 
 from . import card, heatmap
 from .fmt import format_delta, format_percent, format_value
-from .schema import ChartData, ChartError, check_kind, validate
+from .schema import BotGraphValidationError, ChartPayload
 from .themes import (
     CENTER_SIZE, DPI, EDGE_PAD_IN, EDGE_PAD_PX, FONT_BOLD, FONT_REGULAR, LABEL_SIZE, THEMES, TICK_PAD_PT, TICK_SIZE,
     TITLE_SIZE, TITLE_WRAP_CHARS, WIDTH_PX, Theme, base_axes, delta_color, fit_width, font, text_width_px,
 )
+from .validator import validate_payload
 
 _LABEL_PAD_PT = 6
 _DELTA_GAP_PX = 18  # между значением и дельтой «▲ 20 %»
@@ -28,10 +29,7 @@ _LEGEND_HANDLE_PX = 150  # значок легенды и отступы вок�
 
 def render_png(data, kind: str = "bar", theme: str = "light") -> io.BytesIO:
     """Рисует график и возвращает PNG в памяти, указатель стоит в начале буфера."""
-    if theme not in THEMES:
-        raise ChartError(f"theme должен быть одним из: {', '.join(THEMES)}; получено {theme!r}")
-    check_kind(kind)
-    chart = card.validate_card(data) if kind == "card" else validate(data, kind)
+    chart = validate_payload(data, kind, theme)
     _check_glyphs(chart.texts())
     t = THEMES[theme]
 
@@ -46,8 +44,11 @@ def render_png(data, kind: str = "bar", theme: str = "light") -> io.BytesIO:
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", facecolor=t.surface)
+    # Фигура держится на циклических ссылках и ждёт редкой полной сборки мусора. На macOS память процесса
+    # без очистки росла на ~70 МБ за 500 картинок (на Linux — на 1 МБ в обоих случаях).
+    fig.clear()
     buf.seek(0)
-    buf.name = "botgraf.png"  # по имени библиотеки ботов определяют тип файла
+    buf.name = "botgraph.png"  # по имени библиотеки ботов определяют тип файла
     return buf
 
 
@@ -57,7 +58,9 @@ def _check_glyphs(texts: list[tuple[str, str, bool]]) -> None:
         charmap = _charmap(FONT_BOLD if bold else FONT_REGULAR)
         missing = [ch for ch in text if ord(ch) not in charmap]
         if missing:
-            raise ChartError(f"{field}: символ {missing[0]!r} не поддерживается шрифтом")
+            raise BotGraphValidationError(
+                "UNSUPPORTED_GLYPH", f"Символ {missing[0]!r} не поддерживается шрифтом DejaVu Sans", field,
+            )
 
 
 @cache
@@ -65,7 +68,7 @@ def _charmap(path) -> frozenset[int]:
     return frozenset(FT2Font(str(path)).get_charmap())
 
 
-def _line_legend_labels(chart: ChartData) -> list[str]:
+def _line_legend_labels(chart: ChartPayload) -> list[str]:
     # Последние значения — в легенде: подпись у точки налезала бы на вторую линию.
     return [f"{chart.current_label}: {format_value(chart.values[-1])}",
             f"{chart.previous_label}: {format_value(chart.previous[-1])}"]
@@ -90,7 +93,7 @@ def _legend(ax, t: Theme, handles: list) -> None:
     )
 
 
-def _bar(fig: Figure, chart: ChartData, t: Theme) -> None:
+def _bar(fig: Figure, chart: ChartPayload, t: Theme) -> None:
     ax = fig.add_subplot()
     base_axes(ax, t)
     n = len(chart.values)
@@ -157,7 +160,7 @@ def _bar_xlim(lo: float, hi: float, frac: float, side: int) -> tuple[float, floa
     return (lo, hi + pad) if side > 0 else (lo - pad, hi)
 
 
-def _line(fig: Figure, chart: ChartData, t: Theme) -> None:
+def _line(fig: Figure, chart: ChartPayload, t: Theme) -> None:
     ax = fig.add_subplot()
     base_axes(ax, t)
     n = len(chart.values)
@@ -166,7 +169,7 @@ def _line(fig: Figure, chart: ChartData, t: Theme) -> None:
 
     last = chart.values[-1]
     # Подпись последнего значения ставим с той стороны, откуда линия не приходит.
-    label_above = last >= chart.values[-2]
+    label_above = n == 1 or last >= chart.values[-2]
     ticks = _y_ticks(chart.values, None if chart.previous else label_above, chart.previous or ())
     ax.set_ylim(ticks[0], ticks[-1])
     ax.set_yticks(ticks, labels=[format_value(v) for v in ticks], color=t.ink_secondary, fontproperties=font(TICK_SIZE))
@@ -203,7 +206,8 @@ def _line(fig: Figure, chart: ChartData, t: Theme) -> None:
     labels = [fit_width(s, TICK_SIZE, WIDTH_PX * 0.4) for s in chart.labels]
     shown = _spread(n, _x_label_count(labels))
     ax.set_xticks(shown, labels=[labels[i] for i in shown], color=t.ink_secondary, fontproperties=font(TICK_SIZE))
-    ax.set_xlim(-0.04 * (n - 1), (n - 1) * 1.04)
+    pad = 0.04 * (n - 1) or 0.5  # одна точка — по центру, а не в нулевом по ширине интервале
+    ax.set_xlim(-pad, n - 1 + pad)
 
 
 def _y_ticks(values: tuple[float, ...], label_above: bool | None, extra: tuple[float, ...] = ()) -> list[float]:
@@ -242,7 +246,7 @@ _PIE_PX = 760
 _PIE_ROW_PX = 82
 
 
-def _pie(fig: Figure, chart: ChartData, t: Theme) -> None:
+def _pie(fig: Figure, chart: ChartPayload, t: Theme) -> None:
     n = len(chart.values)
     pie_ax, legend_ax = fig.subplots(2, 1, height_ratios=[_PIE_PX, n * _PIE_ROW_PX])
     colors = t.series[:n]

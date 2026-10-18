@@ -1,7 +1,7 @@
 """Демо-бот на aiogram 3: готовые примеры кнопками и график из своих данных.
 
     pip install '.[aiogram]'
-    BOT_TOKEN=123:abc python3 examples/bot.py
+    BOT_TOKEN=123:abc python3 examples/telegram_bot_demo.py
 
 Свои данные — сообщением: необязательные вид и тема, затем JSON, например
     card dark {"metrics": [{"label": "Выручка", "value": 48200, "previous": 43000}]}
@@ -13,13 +13,14 @@ import logging
 import os
 
 from aiogram import Bot, Dispatcher, F
+from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from demo import EXAMPLES
 
-from botgraf import ChartError
-from botgraf.integrations.aiogram import send_chart
-from botgraf.schema import KINDS
+from botgraph import BotGraphValidationError
+from botgraph.integrations.aiogram import send_chart
+from botgraph.schema import KINDS
 
 THEMES = ("light", "dark")
 _TITLES = {
@@ -32,12 +33,14 @@ _HELP = (
     'bar {"labels": ["Кошки", "Собаки"], "values": [12, 8]}\n'
     'line dark {"labels": ["пн", "вт", "ср"], "values": [3, 5, 4]}\n\n'
     f"Виды: {', '.join(KINDS)}. Темы: {', '.join(THEMES)}.\n"
-    "/text — то же самое, но текстом вместо картинки."
+    "/text — то же самое, но текстом вместо картинки.\n\n"
+    "Ошибку в данных бот объяснит кодом и полем, например:\n"
+    'bar {"labels": ["Кошки", "Собаки"], "values": [12]}'
 )
 # Бот на маленьком сервере: больше двух рисунков разом только удлиняют очередь.
 _DRAWING = asyncio.Semaphore(2)
 
-log = logging.getLogger("botgraf.bot")
+log = logging.getLogger("botgraph.bot")
 dp = Dispatcher()
 
 
@@ -45,7 +48,7 @@ def parse_request(text: str) -> tuple[str, str, str]:
     """«[вид] [тема] {json}» → (вид, тема, json). Слова до JSON проверяются, чтобы опечатка не ушла молча."""
     head, brace, body = text.partition("{")
     if not brace:
-        raise ChartError("не вижу JSON — данные должны начинаться с «{». Пример: /start")
+        raise BotGraphValidationError("INVALID_JSON", "Не вижу JSON — данные должны начинаться с «{». Пример: /start", "data")
     kind, theme = "bar", "light"
     for word in head.split():
         word = word.lower()
@@ -54,7 +57,10 @@ def parse_request(text: str) -> tuple[str, str, str]:
         elif word in THEMES:
             theme = word
         elif word != "/text":
-            raise ChartError(f"не понимаю «{word}»: перед JSON можно указать вид ({', '.join(KINDS)}) и тему")
+            raise BotGraphValidationError(
+                "UNSUPPORTED_KIND", f"Не понимаю «{word}»: перед JSON можно указать вид ({', '.join(KINDS)}) и тему "
+                f"({', '.join(THEMES)})", "kind",
+            )
     return kind, theme, brace + body
 
 
@@ -76,6 +82,18 @@ def _variants_keyboard(name: str) -> InlineKeyboardMarkup:
     ]])
 
 
+async def _send(bot: Bot, chat_id: int, data, kind: str, theme: str, *,
+                caption: str | None = None, as_text: bool = False) -> None:
+    """Если Telegram не принял фото, тот же график уходит текстом — пользователь не остаётся без ответа."""
+    if not as_text:
+        try:
+            await send_chart(bot, chat_id, data, kind, theme, caption=caption)
+            return
+        except TelegramAPIError as e:
+            log.warning("фото не отправилось (%s) — отправляю текстом", e)
+    await send_chart(bot, chat_id, data, kind, caption=caption, as_text=True)
+
+
 @dp.message(CommandStart())
 @dp.message(Command("help"))
 async def start(message: Message) -> None:
@@ -95,8 +113,8 @@ async def example(query: CallbackQuery, bot: Bot) -> None:
         await bot.send_message(chat_id, example_message(name))
         return
     async with _DRAWING:
-        await send_chart(bot, chat_id, data, kind, "dark" if mode == "dark" else "light",
-                         caption=_TITLES[name], as_text=mode == "text")
+        await _send(bot, chat_id, data, kind, "dark" if mode == "dark" else "light",
+                    caption=_TITLES[name], as_text=mode == "text")
     if mode == "light":
         await bot.send_message(chat_id, "Другие варианты:", reply_markup=_variants_keyboard(name))
 
@@ -106,8 +124,8 @@ async def user_data(message: Message, bot: Bot) -> None:
     try:
         kind, theme, data = parse_request(message.text)
         async with _DRAWING:
-            await send_chart(bot, message.chat.id, data, kind, theme, as_text=message.text.startswith("/text"))
-    except ChartError as e:
+            await _send(bot, message.chat.id, data, kind, theme, as_text=message.text.startswith("/text"))
+    except BotGraphValidationError as e:
         await message.answer(f"Не получилось нарисовать: {e}")
 
 

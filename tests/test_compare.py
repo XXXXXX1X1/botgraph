@@ -1,40 +1,42 @@
 """Сравнение с прошлым периодом: столбики с меткой «было» и две линии."""
 
-import re
-
 import pytest
 
-from botgraf import ChartError, render_text
-from botgraf.fmt import format_delta
-from botgraf.schema import validate
-from botgraf.themes import THEMES, delta_color
+from botgraph import BotGraphValidationError, render_text, validate_payload
+from botgraph.fmt import format_delta
+from botgraph.themes import THEMES, delta_color
 
 BASE = {"labels": ["a", "b"], "values": [12, 8]}
 
 
 def test_previous_fields_parsed_with_defaults():
-    chart = validate({**BASE, "previous": [10, 8]}, "bar")
+    chart = validate_payload({**BASE, "previous": [10, 8]}, "bar")
     assert chart.previous == (10.0, 8.0)
     assert (chart.previous_label, chart.current_label, chart.lower_is_better) == ("раньше", "сейчас", False)
-    chart = validate({**BASE, "previous": [10, 8], "previous_label": " вчера ", "lower_is_better": True}, "line")
+    chart = validate_payload({**BASE, "previous": [10, 8], "previous_label": " вчера ", "lower_is_better": True}, "line")
     assert (chart.previous_label, chart.lower_is_better) == ("вчера", True)
 
 
 @pytest.mark.parametrize(
-    ("data", "kind", "message"),
+    ("data", "kind", "code", "field"),
     [
-        ({**BASE, "previous": [1]}, "bar", "в previous 1 элементов, а в values 2"),
-        ({**BASE, "previous": [1, "2"]}, "bar", "previous[1] должно быть числом"),
-        ({**BASE, "previous": 5}, "bar", "previous должен быть списком"),
-        ({**BASE, "previous": [1, 2]}, "pie", "previous поддерживается только для bar и line"),
-        ({**BASE, "previous_label": "вчера"}, "bar", "поле previous_label нужно только вместе с previous"),
-        ({**BASE, "previous": [1, 2], "lower_is_better": "да"}, "bar", "lower_is_better должно быть true или false"),
-        ({**BASE, "previous": [1, 2], "current_label": ""}, "bar", "current_label пустая"),
+        ({**BASE, "previous": [1]}, "bar", "LENGTH_MISMATCH", "previous"),
+        ({**BASE, "previous": [1, "2"]}, "bar", "INVALID_VALUE_TYPE", "previous[1]"),
+        ({**BASE, "previous": 5}, "bar", "INVALID_TYPE", "previous"),
+        ({**BASE, "previous": [1, 2]}, "pie", "UNSUPPORTED_COMPARISON", "previous"),
+        ({**BASE, "previous_label": "вчера"}, "bar", "MISSING_KEY", "previous"),
+        ({**BASE, "previous": [1, 2], "lower_is_better": "да"}, "bar", "INVALID_TYPE", "lower_is_better"),
     ],
 )
-def test_invalid_comparison(data, kind, message):
-    with pytest.raises(ChartError, match=re.escape(message)):
-        validate(data, kind)
+def test_invalid_comparison(data, kind, code, field):
+    with pytest.raises(BotGraphValidationError) as e:
+        validate_payload(data, kind)
+    assert (e.value.code, e.value.field) == (code, field)
+
+
+def test_empty_series_name_falls_back_to_default():
+    chart = validate_payload({**BASE, "previous": [1, 2], "current_label": " ", "previous_label": "\n"})
+    assert (chart.current_label, chart.previous_label) == ("сейчас", "раньше")
 
 
 @pytest.mark.parametrize(
