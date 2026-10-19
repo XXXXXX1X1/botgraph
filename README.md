@@ -61,7 +61,7 @@ botgraph stats.json -k bar -o chart.png
 | `render_png(data, kind="bar", theme="light")` | `io.BytesIO` с PNG шириной 1080 px, указатель в начале |
 | `render_text(data, kind="bar")` | `str` для моноширинного шрифта |
 | `validate_payload(data, kind="bar", theme="light")` | `ChartPayload` — проверенные и очищенные данные (для `card` — `CardPayload`) |
-| `send_chart(bot, chat_id, data, kind="bar", theme="light", *, caption=None, as_text=False)` | отправленное сообщение; async, из `botgraph.integrations.aiogram` или `.ptb` |
+| `send_chart(bot, chat_id, data, kind="bar", theme="light", *, caption=None, as_text=False, reply_markup=None)` | отправленное сообщение; async, из `botgraph.integrations.aiogram` или `.ptb`; `reply_markup` — кнопки под графиком |
 | `BotGraphValidationError` | единственное исключение; наследник `ValueError`, поля `code`, `field`, `message` |
 
 `kind`:
@@ -204,7 +204,9 @@ python3 examples/web.py                                   # то же демо �
 BOT_TOKEN=123:abc python3 examples/telegram_bot_demo.py   # демо-бот: примеры кнопками и график из своих данных
 ```
 
-Демо-бот отправляет график фото, а если Telegram фото не принял — тем же графиком текстом.
+Демо-бот управляется кнопками: меню всегда внизу у поля ввода («🧪 Проверка за минуту» показывает всё сразу),
+под картинкой примера — тема, текст, JSON и ◀ ▶, которые меняют ту же картинку на месте. JSON, набранный
+на телефоне с кавычками “ ” или « », бот понимает. Если Telegram фото не принял — тот же график уходит текстом.
 
 HTTP API демо: `POST /api/png?kind=bar&theme=light` и `POST /api/text?kind=bar`, тело — JSON с данными;
 ошибка в данных — 400 и текст ошибки. Боту данные отправляются сообщением: `card dark {"metrics": [...]}`.

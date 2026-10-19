@@ -59,6 +59,14 @@ def test_as_text_sends_escaped_pre(adapter):
 
 @pytest.mark.parametrize("adapter", [aiogram_adapter, ptb_adapter])
 @pytest.mark.parametrize("as_text", [False, True])
+def test_reply_markup_is_passed(adapter, as_text):
+    markup = object()
+    [(_, kwargs)] = _send(adapter, DATA, as_text=as_text, reply_markup=markup)
+    assert kwargs["reply_markup"] is markup
+
+
+@pytest.mark.parametrize("adapter", [aiogram_adapter, ptb_adapter])
+@pytest.mark.parametrize("as_text", [False, True])
 def test_bad_data_raises_and_sends_nothing(adapter, as_text):
     bot = FakeBot()
     with pytest.raises(BotGraphValidationError):
