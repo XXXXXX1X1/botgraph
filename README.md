@@ -15,12 +15,13 @@ Python-библиотека для чат-ботов: словарь с цифр
 ## Установка
 
 ```bash
-pip install git+<ссылка-на-репозиторий>   # или из папки проекта: pip install .
-pip install 'botgraph[aiogram]'            # + готовая отправка для aiogram 3
-pip install 'botgraph[ptb]'                # + готовая отправка для python-telegram-bot 20+
+pip install 'botgraph @ git+https://github.com/XXXXXX1X1/botgraph'
+pip install 'botgraph[aiogram] @ git+https://github.com/XXXXXX1X1/botgraph'   # + готовая отправка для aiogram 3
+pip install 'botgraph[ptb] @ git+https://github.com/XXXXXX1X1/botgraph'       # + готовая отправка для python-telegram-bot 20+
 ```
 
-Нужен Python 3.10+. Единственная обязательная зависимость — matplotlib 3.7+.
+Нужен Python 3.10+. Единственная обязательная зависимость — matplotlib 3.7+. Готовый файл `.whl` — в
+[Releases](https://github.com/XXXXXX1X1/botgraph/releases). На PyPI под именем `botgraph` лежит другой, посторонний пакет — ставьте с GitHub.
 
 ## Быстрый старт
 
